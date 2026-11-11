@@ -126,6 +126,7 @@
     <ClCompile Include="src\terrainhd.cpp" />
     <ClCompile Include="src\basehd.cpp" />
     <ClCompile Include="src\menuhd.cpp" />
+    <ClCompile Include="src\movieframe.cpp" />
     <ClCompile Include="src\rowindent.cpp" />
     <ClCompile Include="src\update.cpp" />
     <ClCompile Include="src\vidmode.cpp" />

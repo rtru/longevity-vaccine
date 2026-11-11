@@ -21,6 +21,7 @@
 #include "caption.h"
 #include "vidmode.h"
 #include "gpuscale.h"
+#include "movieframe.h"
 
 void UimodLog(const char* msg);   // init.cpp: uimod.log + debugger
 
@@ -390,7 +391,15 @@ void DecodeAndPlay(const char* name, const char* path, HWND hwnd, int scrW, int 
     HBITMAP hbb = CreateDIBSection(nullptr, &bbi, DIB_RGB_COLORS, &bb, nullptr, 0);
     HGDIOBJ oldbm = (hbb && memDC) ? SelectObject(memDC, hbb) : nullptr;
     const int bbStride = scrW * 4;
-    if (bb) memset(bb, 0, static_cast<size_t>(bbStride) * scrH);
+    // The frame picture around the movie (movieframe.cpp), else black bars.
+    MovieFrame frame;
+    const bool framed = LoadMovieFrame(scrW, scrH, &frame);
+    auto paintBackground = [&]() {
+        if (!bb) return;
+        if (framed) memcpy(bb, frame.px.data(), static_cast<size_t>(bbStride) * scrH);
+        else memset(bb, 0, static_cast<size_t>(bbStride) * scrH);
+    };
+    paintBackground();
 
     SwsContext* sws = nullptr;
     RECT dst{}; int curW = 0, curH = 0, curFmt = -1;
@@ -430,12 +439,12 @@ void DecodeAndPlay(const char* name, const char* path, HWND hwnd, int scrW, int 
             while (!skip && avcodec_receive_frame(ctx, frm) == 0) {
                 if (!sws || frm->width != curW || frm->height != curH || frm->format != curFmt) {
                     curW = frm->width; curH = frm->height; curFmt = frm->format;
-                    dst = FitRect(curW, curH, scrW, scrH);
+                    dst = framed ? MovieFrameFit(frame, curW, curH) : FitRect(curW, curH, scrW, scrH);
                     if (sws) sws_freeContext(sws);
                     sws = sws_getContext(curW, curH, static_cast<AVPixelFormat>(curFmt),
                                          dst.right - dst.left, dst.bottom - dst.top, AV_PIX_FMT_BGRA,
                                          swsFlags, nullptr, nullptr, nullptr);
-                    memset(bb, 0, static_cast<size_t>(bbStride) * scrH); // refresh bars on size change
+                    paintBackground();   // refresh the bars / frame on size change
                 }
                 if (sws) {
                     uint8_t* d0 = static_cast<uint8_t*>(bb)
