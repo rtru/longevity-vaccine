@@ -41,6 +41,11 @@ explained, so both paths stay.
 **Verified in game** (PRACX + Thinker 5.5, 2560x1440): levels 1/2/4 switch with zoom, 162 textures, renders match
 stock geometry at 4x; the thin diagonal tile-edge lines are the stock game's own.
 
+**Level 1 from the master (2026-11-11):** with only texture_x8.pcx on disk, the zoomed-out map (level 1) showed
+TEXTURE.PCX's own art, so a pack looked like a different pack at the far zoom. When a master is present, level 1 is
+now cut from a 1024x768 DownscaleMode(8) of it too (`g_low`); the stock cut stays the restore path. Verified in game
+with real art (rtru's sheet). Base sprites: [[project-smac-base-hd]].
+
 **Open:** a Preferences row (only the `[UIMod] TerrainHD=0` ini switch today); real HD art (the tests used Scale2x
 sheets made from the stock file); the terrain overlay SPRITES (rocks, forests' sprite parts, farms) are separate
 sprites, not these textures, and stay stock.

@@ -102,6 +102,12 @@ bool g_dead = false;                                   // a failed install: stoc
 alignas(16) uint8_t g_sheet[9][kBufSize + 0x80];       // 2, 4, 8: the HD sheets; 1: the stock sheet (adoption)
 alignas(16) uint8_t g_scratch[kBufSize + 0x80];
 bool g_scratchReady = false;
+// Level 1 from the 8x master: zoomed out the map would otherwise show TEXTURE.PCX's own art, so a pack looks like a
+// different pack at the far zoom. Cut down with the same law as 2x / 4x; the stock cut stays the restore path.
+alignas(16) uint8_t g_low[kBufSize + 0x80];
+bool g_lowLoaded = false;
+bool g_lowFailed = false;                              // tried and could not make it: stock when zoomed out
+bool g_lowInstalled = false;                           // level 1 is currently cut from g_low (not stock)
 int32_t g_uvStock[2][56];
 char g_dir[MAX_PATH];                                  // game folder, with trailing backslash
 
@@ -245,8 +251,20 @@ bool DeriveFromMaster()
                                  dst, Field(g_sheet[k], kBufPitch));
         g_loaded |= 1u << k;
     }
-    Log("[terrainhd] derived the%s%s levels from texture_x8.pcx in %lu ms\n", (g_loaded & 4) ? " 2x" : "",
-        (g_loaded & 16) ? " 4x" : "", GetTickCount() - t0);
+    if (!g_lowLoaded) {
+        reinterpret_cast<FBufferCtor>(At(kVA_BufferCtor))(g_low);
+        reinterpret_cast<FBufferResize>(At(kVA_BufferResize))(g_low, terrainhd::kStockSheetW, terrainhd::kStockSheetH, 0, 0);
+        if (Pixels(g_low) && terrainhd::SheetSizeOk(Field(g_low, kBufW), Field(g_low, kBufH), 1)) {
+            terrainhd::DownscaleMode(src, terrainhd::kStockSheetW * 8, terrainhd::kStockSheetH * 8, spitch, 8,
+                                     Pixels(g_low), Field(g_low, kBufPitch));
+            g_lowLoaded = true;
+        } else {
+            Log("[terrainhd] could not size a 1024x768 buffer for the 1x level -> stock when zoomed out\n");
+            g_lowFailed = true;
+        }
+    }
+    Log("[terrainhd] derived the%s%s%s levels from texture_x8.pcx in %lu ms\n", g_lowLoaded ? " 1x" : "",
+        (g_loaded & 4) ? " 2x" : "", (g_loaded & 16) ? " 4x" : "", GetTickCount() - t0);
     reinterpret_cast<FBufferDtor>(At(kVA_BufferDtor))(g_sheet[8]);
     g_loaded &= ~(1u << 8);
     return true;
@@ -266,13 +284,16 @@ bool LoadSheet(int k)
 
 // --- levels -----------------------------------------------------------------------------------------------------
 
-bool CutAll(int k)
+// low: level 1 from the master's 1x (sheet textures only; the RAINFALL composites stay stock)
+bool CutAll(int k, bool low = false)
 {
     const int side = kTex * k;
     std::vector<uint8_t> a, b;
     for (Entry& e : g_entries) {
         int rc;
-        if (k == 1) {
+        if (k == 1 && low && e.sheet) {
+            rc = g_extract(e.tex, g_low, e.x, e.y, kTex, kTex, nullptr);
+        } else if (k == 1) {
             rc = FillScratch(e.stock, kTex) ? g_extract(e.tex, g_scratch, 0, 0, kTex, kTex, nullptr) : -1;
         } else if (e.sheet) {
             rc = g_extract(e.tex, g_sheet[k], e.x * k, e.y * k, side, side, nullptr);
@@ -293,22 +314,31 @@ bool CutAll(int k)
     return true;
 }
 
+// Level 1 is drawn from the master whenever there is one (and its 1x could be made).
+bool WantLow() { return (g_files & (1u << 8)) != 0 && !g_lowFailed; }
+
 void SetLevel(int k)
 {
     if (k != 1 && !LoadSheet(k)) return;
-    if (!CutAll(k)) {
+    if (k == 1 && WantLow() && !g_lowLoaded && !DeriveFromMaster()) g_lowFailed = true;
+    const bool low = k == 1 && WantLow() && g_lowLoaded;
+    if (!CutAll(k, low)) {
         // a failed extract has already freed that texture's copy: every one back to stock, then stay there
-        const bool back = k != 1 && CutAll(1);
+        const bool back = (k != 1 || low) && CutAll(1);
         WriteUv(1);
         g_level = 1;
+        g_lowInstalled = false;
         g_dead = true;
         Log(back ? "[terrainhd] stock textures restored; HD terrain off for this session\n"
                  : "[terrainhd] could not restore stock textures; HD terrain off for this session\n");
         return;
     }
     WriteUv(k);
-    if (g_level != k) Log("[terrainhd] level %d (%u textures)\n", k, static_cast<unsigned>(g_entries.size()));
+    if (g_level != k || low != g_lowInstalled)
+        Log("[terrainhd] level %d%s (%u textures)\n", k, low ? " from texture_x8.pcx" : "",
+            static_cast<unsigned>(g_entries.size()));
     g_level = k;
+    g_lowInstalled = low;
 }
 
 // --- hooks ------------------------------------------------------------------------------------------------------
@@ -322,6 +352,7 @@ int __fastcall ExtractRecorder(Texture* tex, void* /*edx*/, void* src, int x, in
         WriteUv(1);
         g_level = 1;
     }
+    g_lowInstalled = false;
     Entry* e = nullptr;
     for (Entry& it : g_entries) if (it.tex == tex) { e = &it; break; }
     if (!e) {
@@ -406,7 +437,7 @@ int __cdecl GenTerrainPolyHook(void* buf, void* win, int zoom, int a4, int a5, i
     if (!g_dead && g_have && win == At(kVA_MainConsole) && g_entries.empty() && !g_adoptTried) AdoptLoadedTextures();
     if (!g_dead && g_have && !g_entries.empty() && win == At(kVA_MainConsole)) {
         const int want = terrainhd::LevelFor(zoom, g_have);
-        if (want != g_level) SetLevel(want);
+        if (want != g_level || (want == 1 && WantLow() && !g_lowInstalled)) SetLevel(want);
     }
     return g_gen(buf, win, zoom, a4, a5, a6, a7, a8, a9, a10);
 }
