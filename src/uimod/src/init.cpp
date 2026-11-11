@@ -37,6 +37,7 @@
 #include "riotfix.h"
 #include "terrainhd.h"
 #include "basehd.h"
+#include "menuhd.h"
 #include "blinkfix.h"
 #include "cursorscale.h"
 #include "hudmovesfix.h"
@@ -404,6 +405,11 @@ extern "C" void __stdcall Init(HMODULE self)
     // faction's base icons on the map. Nothing is patched without a pack on disk; [UIMod] BaseHD=0 turns it off.
     // Two byte-checked E8 retargets, cave-free, both exes. See basehd.cpp.
     InstallBaseHd();
+
+    // Drop-in HD opening pictures: <game>\menu\<name>_<W>x<H>.pcx (e.g. xopeninga_3840x1080.pcx) replace the main menu
+    // background, the closest shape scaled to cover the window without distortion. Nothing is patched without a file
+    // in menu\; [UIMod] MenuHD=0 turns it off. Two byte-checked E8 retargets, cave-free, both exes. See menuhd.cpp.
+    InstallMenuHd();
 
     // The engine map cursors (go-to, patrol, airdrop, ...) at vanilla x g/16. Patched exe only. See cursorscale.cpp.
     InstallCursorScale();
