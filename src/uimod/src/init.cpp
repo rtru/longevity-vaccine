@@ -38,6 +38,7 @@
 #include "terrainhd.h"
 #include "basehd.h"
 #include "menuhd.h"
+#include "monumenthd.h"
 #include "blinkfix.h"
 #include "cursorscale.h"
 #include "hudmovesfix.h"
@@ -410,6 +411,11 @@ extern "C" void __stdcall Init(HMODULE self)
     // background, the closest shape scaled to cover the window without distortion. Nothing is patched without a file
     // in menu\; [UIMod] MenuHD=0 turns it off. Two byte-checked E8 retargets, cave-free, both exes. See menuhd.cpp.
     InstallMenuHd();
+
+    // Planetary Monument near view across the whole screen: <game>\monument\monzoomN_<W>x<H>.pcx painted over the whole
+    // canvas, lined up on the screen of the 4:3 backdrop drawn first. Nothing is patched without a file in monument\;
+    // [UIMod] MonumentHD=0 turns it off. Two byte-checked E8 retargets, cave-free, both exes. See monumenthd.cpp.
+    InstallMonumentHd();
 
     // The engine map cursors (go-to, patrol, airdrop, ...) at vanilla x g/16. Patched exe only. See cursorscale.cpp.
     InstallCursorScale();
